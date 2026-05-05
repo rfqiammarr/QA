@@ -12,7 +12,7 @@ from selenium.webdriver.support.ui import Select, WebDriverWait
 
 
 def load_env_file() -> None:
-    env_path = Path(__file__).with_name(".env")
+    env_path = Path(__file__).parent.parent / ".env"
     if not env_path.exists():
         return
 
