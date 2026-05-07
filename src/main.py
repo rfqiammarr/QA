@@ -72,6 +72,99 @@ fake = Faker("id_ID")
 
 
 # ============================================================================
+# FUNGSI UTAMA
+# ============================================================================
+
+def main() -> None:
+    """Fungsi utama automation QA - membuat transaksi secara otomatis.
+    
+    Flow:
+    1. Parse jumlah transaksi dari argument (atau gunakan default dari .env)
+    2. Inisialisasi Selenium WebDriver
+    3. Login ke aplikasi
+    4. Buka halaman transactions
+    5. Loop untuk membuat N transaksi:
+       - Tutup dialog blocking jika ada
+       - Buka form tambah transaksi
+       - Isi dan submit form
+       - Jika gagal, retry sampai MAX_RETRY_PER_ITEM kali
+    6. Tampilkan hasil (jumlah sukses)
+    7. Cleanup: tutup browser
+    """
+    # Baca jumlah transaksi dari argument atau gunakan default
+    total = TOTAL_TRANSAKSI
+    if len(sys.argv) > 1:
+        try:
+            total = int(sys.argv[1])
+        except ValueError:
+            print("Argumen jumlah transaksi tidak valid. Gunakan angka, contoh: python main.py 60")
+            return
+
+    # Inisialisasi Selenium WebDriver
+    driver = webdriver.Chrome()
+    wait = WebDriverWait(driver, 25)
+    driver.maximize_window()
+
+    sukses = 0
+    try:
+        # LOGIN KE APLIKASI
+        login(driver, wait)
+        driver.get(f"{BASE_URL}/transactions")
+        wait.until(EC.presence_of_element_located((By.TAG_NAME, "table")))
+
+        # LOOP MEMBUAT TRANSAKSI
+        for i in range(1, total + 1):
+            last_error = None
+            
+            # Retry loop: coba sampai MAX_RETRY_PER_ITEM kali
+            for attempt in range(1, MAX_RETRY_PER_ITEM + 1):
+                try:
+                    # Tutup popup blocking jika ada
+                    close_blocking_dialog_if_any(driver)
+                    
+                    # Buka form tambah transaksi
+                    open_form_tambah(wait)
+                    
+                    # Isi dan submit form
+                    amount, note = isi_dan_submit_form(driver, wait, i)
+                    
+                    # Sukses: increment counter dan break dari retry loop
+                    sukses += 1
+                    print(f"✅ [{i}/{total}] Berhasil: Rp{amount} | {note}")
+                    time.sleep(0.25)
+                    last_error = None
+                    break
+                    
+                except TimeoutException as exc:
+                    # Timeout: simpan error dan log
+                    last_error = f"Timeout ({exc.__class__.__name__})"
+                    print(f"⚠️ [{i}/{total}] Attempt {attempt}: {last_error}")
+                    # Reload halaman untuk reset state
+                    driver.get(f"{BASE_URL}/transactions")
+                    wait.until(EC.presence_of_element_located((By.TAG_NAME, "table")))
+                    
+                except Exception as exc:  # noqa: BLE001
+                    # Error lainnya: simpan error dan log
+                    last_error = str(exc)
+                    print(f"⚠️ [{i}/{total}] Attempt {attempt}: {last_error}")
+                    # Reload halaman untuk reset state
+                    driver.get(f"{BASE_URL}/transactions")
+                    wait.until(EC.presence_of_element_located((By.TAG_NAME, "table")))
+
+            # Jika masih ada error setelah semua retry: hentikan automation
+            if last_error is not None:
+                print(f"❌ [{i}/{total}] Gagal setelah retry: {last_error}")
+                break
+
+        # Tampilkan hasil akhir
+        print(f"\nSelesai. Total sukses: {sukses}/{total}")
+        time.sleep(2)
+    finally:
+        # Cleanup: selalu tutup browser
+        driver.quit()
+
+
+# ============================================================================
 # FUNGSI HELPER UNTUK INTERAKSI DROPDOWN
 # ============================================================================
 
@@ -280,96 +373,6 @@ def isi_dan_submit_form(driver, wait: WebDriverWait, nomor: int) -> tuple[int, s
         raise RuntimeError(f"Submit gagal: {msg}")
     
     return amount_val, catatan
-
-
-
-def main() -> None:
-    """Fungsi utama automation QA - membuat transaksi secara otomatis.
-    
-    Flow:
-    1. Parse jumlah transaksi dari argument (atau gunakan default dari .env)
-    2. Inisialisasi Selenium WebDriver
-    3. Login ke aplikasi
-    4. Buka halaman transactions
-    5. Loop untuk membuat N transaksi:
-       - Tutup dialog blocking jika ada
-       - Buka form tambah transaksi
-       - Isi dan submit form
-       - Jika gagal, retry sampai MAX_RETRY_PER_ITEM kali
-    6. Tampilkan hasil (jumlah sukses)
-    7. Cleanup: tutup browser
-    """
-    # Baca jumlah transaksi dari argument atau gunakan default
-    total = TOTAL_TRANSAKSI
-    if len(sys.argv) > 1:
-        try:
-            total = int(sys.argv[1])
-        except ValueError:
-            print("Argumen jumlah transaksi tidak valid. Gunakan angka, contoh: python main.py 60")
-            return
-
-    # Inisialisasi Selenium WebDriver
-    driver = webdriver.Chrome()
-    wait = WebDriverWait(driver, 25)
-    driver.maximize_window()
-
-    sukses = 0
-    try:
-        # LOGIN KE APLIKASI
-        login(driver, wait)
-        driver.get(f"{BASE_URL}/transactions")
-        wait.until(EC.presence_of_element_located((By.TAG_NAME, "table")))
-
-        # LOOP MEMBUAT TRANSAKSI
-        for i in range(1, total + 1):
-            last_error = None
-            
-            # Retry loop: coba sampai MAX_RETRY_PER_ITEM kali
-            for attempt in range(1, MAX_RETRY_PER_ITEM + 1):
-                try:
-                    # Tutup popup blocking jika ada
-                    close_blocking_dialog_if_any(driver)
-                    
-                    # Buka form tambah transaksi
-                    open_form_tambah(wait)
-                    
-                    # Isi dan submit form
-                    amount, note = isi_dan_submit_form(driver, wait, i)
-                    
-                    # Sukses: increment counter dan break dari retry loop
-                    sukses += 1
-                    print(f"✅ [{i}/{total}] Berhasil: Rp{amount} | {note}")
-                    time.sleep(0.25)
-                    last_error = None
-                    break
-                    
-                except TimeoutException as exc:
-                    # Timeout: simpan error dan log
-                    last_error = f"Timeout ({exc.__class__.__name__})"
-                    print(f"⚠️ [{i}/{total}] Attempt {attempt}: {last_error}")
-                    # Reload halaman untuk reset state
-                    driver.get(f"{BASE_URL}/transactions")
-                    wait.until(EC.presence_of_element_located((By.TAG_NAME, "table")))
-                    
-                except Exception as exc:  # noqa: BLE001
-                    # Error lainnya: simpan error dan log
-                    last_error = str(exc)
-                    print(f"⚠️ [{i}/{total}] Attempt {attempt}: {last_error}")
-                    # Reload halaman untuk reset state
-                    driver.get(f"{BASE_URL}/transactions")
-                    wait.until(EC.presence_of_element_located((By.TAG_NAME, "table")))
-
-            # Jika masih ada error setelah semua retry: hentikan automation
-            if last_error is not None:
-                print(f"❌ [{i}/{total}] Gagal setelah retry: {last_error}")
-                break
-
-        # Tampilkan hasil akhir
-        print(f"\nSelesai. Total sukses: {sukses}/{total}")
-        time.sleep(2)
-    finally:
-        # Cleanup: selalu tutup browser
-        driver.quit()
 
 
 if __name__ == "__main__":
